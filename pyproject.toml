@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "matstruct-lab"
+version = "0.1.0"
+description = "Utilities and notebooks for building structures, defects, and heterostructures with ASE and pymatgen"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ase",
+    "pymatgen",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "jupyterlab",
+    "ipywidgets"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "black"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.black]
+line-length = 100

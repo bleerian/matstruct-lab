@@ -1,0 +1,18 @@
+name: matstruct-lab
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - ase
+  - pymatgen
+  - numpy
+  - scipy
+  - matplotlib
+  - jupyterlab
+  - ipywidgets
+  - pytest
+  - ruff
+  - black
+  - pip
+  - pip:
+      - -e .
