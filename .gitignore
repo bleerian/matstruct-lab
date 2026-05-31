@@ -17,3 +17,33 @@ build/
 *.npz
 .DS_Store
 .vscode/
+
+# Generated heterostructure/output folders
+notebooks/strain_targeted_metal_mos2_sandwiches/
+notebooks/shared_sandwich_small_cells*/
+notebooks/small_sandwich_all_strain_modes/
+notebooks/balanced_41_atom_shared/
+notebooks/forced_41_atom_check/
+notebooks/heterostructure_outputs/
+notebooks/sandwich_outputs*/
+
+# OpenMX/DFT generated outputs
+*.out
+*.log
+*.scfout
+*.dat#
+*.cube
+*.Dos.val
+*.Dos.vec
+*.Dos*
+*.HS
+*.TRAN*
+*.NEGF*
+*.Band
+*.ene
+*.md
+*.xyz
+*.vasp
+*.cif
+
+# Keep source code, avoid generated structures unless explicitly force-added
