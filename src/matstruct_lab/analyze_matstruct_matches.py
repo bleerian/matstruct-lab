@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Run matstruct_lab.find_2d_matches and compute strain for each match.
 
-This script is intentionally defensive because match object field names can vary
-between lattice-matching libraries. Use --debug-attrs if it cannot infer the
-film/substrate transforms or matched lattice vectors.
-
-Edit MATCH_KWARGS below to match your search settings.
+This remains as a small CLI wrapper.  New notebook workflows should generally
+use matstruct_lab.hetero_strain or matstruct_lab.sandwich directly.
 """
+
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +16,7 @@ import pandas as pd
 from pymatgen.core import Structure
 
 from matstruct_lab.lattice_match import find_2d_matches, print_matches
-
-from strain_utils_2d import (
+from matstruct_lab.strain_utils_2d import (
     cell2d_from_structure,
     load_structure,
     strain_summary,
@@ -29,8 +25,7 @@ from strain_utils_2d import (
     write_json,
 )
 
-# Put your matstruct_lab search settings here. Examples of likely options:
-# MATCH_KWARGS = dict(max_area=250, max_mismatch=0.05, max_angle_diff=2.0)
+
 MATCH_KWARGS: dict[str, Any] = {}
 
 
@@ -70,16 +65,14 @@ def as_2d_cell_from_vectors(value: Any) -> np.ndarray | None:
     if value is None:
         return None
     arr = np.array(value, dtype=float)
-    # Common cases: [[ax, ay, az], [bx, by, bz]] or [[ax, bx], [ay, by]]
     if arr.shape == (2, 3):
-        return np.column_stack([arr[0, :2], arr[1, :2]])
+        return arr[:, :2]
     if arr.shape == (3, 2):
         return arr[:2, :]
     if arr.shape == (2, 2):
-        # Ambiguous. Treat rows as vectors if that resembles pymatgen/lattice output.
-        return np.column_stack([arr[0, :], arr[1, :]])
+        return arr
     if arr.shape == (3, 3):
-        return np.column_stack([arr[0, :2], arr[1, :2]])
+        return arr[:2, :2]
     return None
 
 
@@ -146,21 +139,12 @@ def main() -> None:
         if film_cell is None or sub_cell is None:
             if args.debug_attrs:
                 debug_attrs(match)
-            raise SystemExit(
-                "Could not infer film/substrate supercell vectors from match object. "
-                "Run with --debug-attrs and add the correct field names to *_NAMES lists."
-            )
+            raise SystemExit("Could not infer film/substrate supercell vectors from match object.")
 
-        # Two useful conventions. If substrate is fixed, film_to_substrate is the film strain.
         r1 = to_plain_dict(strain_summary(film_cell, sub_cell, "film_supercell", "substrate_supercell"))
         r2 = to_plain_dict(strain_summary(sub_cell, film_cell, "substrate_supercell", "film_supercell"))
         for r in (r1, r2):
             r["match_index"] = i
-            # Copy any common scalar metadata from the match object if present.
-            for key in ["area", "match_area", "mismatch", "strain", "angle", "angle_diff", "rotation"]:
-                val = get_value(match, [key])
-                if isinstance(val, (int, float, str)):
-                    r[f"match_{key}"] = val
         records.extend([r1, r2])
 
     df = pd.DataFrame(records)
