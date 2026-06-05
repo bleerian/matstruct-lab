@@ -1,24 +1,24 @@
-#!/usr/bin/env python3
-"""Utilities for 2D lattice mismatch and heterostructure strain analysis.
+"""Compatibility wrappers for older pymatgen-based strain scripts.
 
-Conventions
------------
-- pymatgen lattice vectors a,b,c are converted to a 2x2 Cartesian matrix whose
-  columns are the in-plane a and b vectors projected onto x-y.
-- A strain maps `reference_cell -> target_cell`.
-- Positive strain means the reference layer must be stretched to match target.
-- For 2D heterostructures, use the polar stretch strain by default because it
-  removes rigid in-plane rotation from the deformation gradient.
+New ASE-native code should import from :mod:`matstruct_lab.hetero_strain`.
 """
+
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
 from pymatgen.core import Structure
+
+from matstruct_lab.hetero_strain import (
+    cell_summary as _cell_summary_dict,
+    polar_decomposition_2d,
+    strain_summary as _strain_summary_dict,
+    write_json_records,
+)
 
 
 @dataclass
@@ -62,98 +62,69 @@ def load_structure(path: str | Path) -> Structure:
 
 
 def cell2d_from_structure(structure: Structure) -> np.ndarray:
-    """Return 2x2 matrix with columns equal to projected in-plane a,b vectors."""
-    mat = np.array(structure.lattice.matrix, dtype=float)  # rows: a, b, c
-    return np.column_stack([mat[0, :2], mat[1, :2]])
+    """Return ASE-style row-vector 2D cell from a pymatgen Structure."""
+    mat = np.array(structure.lattice.matrix, dtype=float)
+    return mat[:2, :2]
 
 
 def transform_2d_cell(cell: np.ndarray, transform: Iterable[Iterable[float]]) -> np.ndarray:
-    """Apply a pymatgen-style 2D supercell transform to a 2D column cell.
-
-    For pymatgen, new lattice rows = T @ old lattice rows. With column cell
-    convention, new_cell = old_cell @ T.T.
-    """
+    """Apply a 2D supercell transform using ASE row-vector convention."""
     t = np.array(transform, dtype=float)
     if t.shape == (3, 3):
         t = t[:2, :2]
     if t.shape != (2, 2):
         raise ValueError(f"Expected 2x2 or 3x3 transform, got {t.shape}")
-    return cell @ t.T
+    return t @ np.asarray(cell, dtype=float)
 
 
 def cell_summary(cell: np.ndarray) -> CellSummary:
-    a = cell[:, 0]
-    b = cell[:, 1]
-    la = float(np.linalg.norm(a))
-    lb = float(np.linalg.norm(b))
-    cosang = float(np.dot(a, b) / (la * lb))
-    cosang = max(-1.0, min(1.0, cosang))
-    gamma = float(np.degrees(np.arccos(cosang)))
-    area = float(abs(np.linalg.det(cell)))
-    return CellSummary(a_A=la, b_A=lb, gamma_deg=gamma, area_A2=area)
+    d = _cell_summary_dict(cell)
+    return CellSummary(**d)
 
 
-def polar_decomposition_2d(F: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return R, U from F = R U, where U is symmetric positive stretch."""
-    C = F.T @ F
-    vals, vecs = np.linalg.eigh(C)
-    vals = np.clip(vals, 0.0, None)
-    U = vecs @ np.diag(np.sqrt(vals)) @ vecs.T
-    R = F @ np.linalg.inv(U)
-    return R, U
-
-
-def strain_summary(reference_cell: np.ndarray, target_cell: np.ndarray,
-                   reference_name: str = "reference", target_name: str = "target") -> StrainSummary:
-    """Compute rotation-free 2D strain required to map reference_cell onto target_cell."""
-    ref = cell_summary(reference_cell)
-    tar = cell_summary(target_cell)
-
-    F = target_cell @ np.linalg.inv(reference_cell)
-    R, U = polar_decomposition_2d(F)
-    stretch_strain = U - np.eye(2)
-    principal = np.linalg.eigvalsh(stretch_strain)
-
-    eps_a = (tar.a_A - ref.a_A) / ref.a_A
-    eps_b = (tar.b_A - ref.b_A) / ref.b_A
-    area_strain = (tar.area_A2 - ref.area_A2) / ref.area_A2
-
+def strain_summary(
+    reference_cell: np.ndarray,
+    target_cell: np.ndarray,
+    reference_name: str = "reference",
+    target_name: str = "target",
+) -> StrainSummary:
+    d = _strain_summary_dict(reference_cell, target_cell, reference=reference_name, target=target_name)
     return StrainSummary(
-        reference=reference_name,
-        target=target_name,
-        a_ref_A=ref.a_A,
-        b_ref_A=ref.b_A,
-        gamma_ref_deg=ref.gamma_deg,
-        area_ref_A2=ref.area_A2,
-        a_target_A=tar.a_A,
-        b_target_A=tar.b_A,
-        gamma_target_deg=tar.gamma_deg,
-        area_target_A2=tar.area_A2,
-        eps_a_percent=100 * eps_a,
-        eps_b_percent=100 * eps_b,
-        delta_gamma_deg=tar.gamma_deg - ref.gamma_deg,
-        area_strain_percent=100 * area_strain,
-        stretch_xx_percent=100 * stretch_strain[0, 0],
-        stretch_yy_percent=100 * stretch_strain[1, 1],
-        stretch_xy_percent=100 * stretch_strain[0, 1],
-        principal_strain_1_percent=100 * principal[0],
-        principal_strain_2_percent=100 * principal[1],
-        rms_principal_strain_percent=100 * float(np.sqrt(np.mean(principal**2))),
-        max_abs_principal_strain_percent=100 * float(np.max(np.abs(principal))),
-        deformation_gradient=F.tolist(),
-        rotation_matrix=R.tolist(),
-        stretch_tensor=U.tolist(),
+        reference=d["reference"],
+        target=d["target"],
+        a_ref_A=d["a_ref_A"],
+        b_ref_A=d["b_ref_A"],
+        gamma_ref_deg=d["gamma_ref_deg"],
+        area_ref_A2=d["area_ref_A2"],
+        a_target_A=d["a_target_A"],
+        b_target_A=d["b_target_A"],
+        gamma_target_deg=d["gamma_target_deg"],
+        area_target_A2=d["area_target_A2"],
+        eps_a_percent=d["eps_a_percent"],
+        eps_b_percent=d["eps_b_percent"],
+        delta_gamma_deg=d["delta_gamma_deg"],
+        area_strain_percent=d["signed_area_strain_percent"],
+        stretch_xx_percent=d["stretch_xx_percent"],
+        stretch_yy_percent=d["stretch_yy_percent"],
+        stretch_xy_percent=d["stretch_xy_percent"],
+        principal_strain_1_percent=d["principal_strain_1_percent"],
+        principal_strain_2_percent=d["principal_strain_2_percent"],
+        rms_principal_strain_percent=d["rms_principal_strain_percent"],
+        max_abs_principal_strain_percent=d["max_abs_principal_strain_percent"],
+        deformation_gradient=d["deformation_gradient"],
+        rotation_matrix=d["rotation_matrix"],
+        stretch_tensor=d["stretch_tensor"],
     )
 
 
 def to_plain_dict(obj: Any) -> dict[str, Any]:
-    d = asdict(obj)
-    # keep JSON/CSV clean
-    return d
+    if hasattr(obj, "__dataclass_fields__"):
+        return {k: getattr(obj, k) for k in obj.__dataclass_fields__}
+    return dict(obj)
 
 
 def write_json(path: str | Path, records: list[dict[str, Any]]) -> None:
-    Path(path).write_text(json.dumps(records, indent=2), encoding="utf-8")
+    write_json_records(path, records)
 
 
 def parse_matrix(text: str) -> np.ndarray:
